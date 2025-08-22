@@ -5,4 +5,4 @@ services:
     environment:
       - ASPNETCORE_URLS=http://+:8080
     ports:
-      - "8081:8080"   # <-- change host port to 8081
+      - "${HOST_PORT:-8081}:8080"   # Host port dışarıdan verilecek, yoksa varsayılan 8081
