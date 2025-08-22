@@ -9,34 +9,34 @@ pipeline {
 
     stage('Dotnet Test') {
       steps {
-        sh '''
+        sh '
           set -e
           dotnet --info
           dotnet restore
-          dotnet test --configuration Release --no-build
-        '''
+          dotnet test --configuration Release
+        '
       }
     }
 
     stage('Build Docker Image') {
       steps {
-        sh '''
+        sh '
           set -e
           docker build -t webapp:latest .
           docker images | grep webapp
-        '''
+        '
       }
     }
 
-    stage('Deploy (docker-compose)') {
+    stage('Deploy (docker-compose)' ) {
       steps {
-        sh '''
+        sh '
           set -e
           docker compose -f docker-compose.prod.yml down || true
           docker compose -f docker-compose.prod.yml up -d
           sleep 2
           curl -fsS http://localhost:8081/weatherforecast | head -c 400
-        '''
+        '
       }
     }
   }
