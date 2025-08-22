@@ -1,76 +1,48 @@
 pipeline {
   agent any
-  options { timestamps(); ansiColor('xterm') }
-
-  environment {
-    IMAGE_NAME  = "webapp"
-    REPORTS_DIR = "reports"
-  }
+  options { timestamps() }
 
   stages {
     stage('Checkout') {
-      steps {
-        checkout scm
-        script {
-          sh "mkdir -p ${REPORTS_DIR}"
-          env.GIT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-          env.VERSION = "${env.BUILD_NUMBER}-${env.GIT_SHA}"
-          echo "Version = ${env.VERSION}"
-        }
-      }
+      steps { checkout scm }
     }
 
-    stage('Unit Tests') {
+    stage('Dotnet Test') {
       steps {
         sh '''
-          docker run --rm -v "$PWD":/workspace -w /workspace \
-            mcr.microsoft.com/dotnet/sdk:8.0 \
-            bash -lc "dotnet restore && dotnet test tests/UnitTests/UnitTests.csproj \
-              --logger \\"trx;LogFileName=TestResults.trx\\" \
-              --results-directory ${REPORTS_DIR}/unit || true"
+          set -e
+          dotnet --info
+          dotnet restore
+          dotnet test --configuration Release --no-build
         '''
       }
-      post {
-        always { archiveArtifacts artifacts: 'reports/unit/**/*.trx', allowEmptyArchive: true }
-      }
     }
 
-    stage('Integration Tests') {
+    stage('Build Docker Image') {
       steps {
         sh '''
-          docker run --rm -v "$PWD":/workspace -w /workspace \
-            mcr.microsoft.com/dotnet/sdk:8.0 \
-            bash -lc "dotnet test tests/IntegrationTests/IntegrationTests.csproj \
-              --logger \\"trx;LogFileName=TestResults.trx\\" \
-              --results-directory ${REPORTS_DIR}/integration || true"
+          set -e
+          docker build -t webapp:latest .
+          docker images | grep webapp
         '''
       }
-      post {
-        always { archiveArtifacts artifacts: 'reports/integration/**/*.trx', allowEmptyArchive: true }
-      }
     }
 
-    stage('Build Image') {
-      steps {
-        sh 'docker build -t ${IMAGE_NAME}:${VERSION} -t ${IMAGE_NAME}:latest .'
-      }
-    }
-
-    stage('Deploy (local)') {
-      when {
-        anyOf { branch 'master'; branch 'main' }  // support either default branch
-      }
+    stage('Deploy (docker-compose)') {
       steps {
         sh '''
-          export VERSION=${VERSION}
-          docker compose -f docker-compose.prod.yml up -d --force-recreate
-          docker image prune -f
+          set -e
+          docker compose -f docker-compose.prod.yml down || true
+          docker compose -f docker-compose.prod.yml up -d
+          sleep 2
+          curl -fsS http://localhost:8081/weatherforecast | head -c 400
         '''
       }
     }
   }
 
   post {
-    always { cleanWs() }
+    success { echo '✅ CI/CD tamam: testler OK, imaj build edildi, 8081’de çalışıyor.' }
+    failure { echo '❌ Pipeline hata verdi. Console logdan hangi aşamada durduğunu kontrol et.' }
   }
 }
